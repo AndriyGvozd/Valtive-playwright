@@ -1,0 +1,24 @@
+{
+  "name": "valtive-playwright",
+  "version": "1.0.0",
+  "description": "Playwright automation for the Valtive.io Calendly contact form",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test tests/valtive-static/contact-page.smoke.spec.ts",
+    "test:booking": "playwright test tests/valtive-static/booking.spec.ts --project=chromium --workers=1",
+    "test:headed": "playwright test --headed",
+    "test:qase": "QASE_MODE=testops playwright test",
+    "report": "playwright show-report"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.5.1",
+    "dotenv": "^17.4.2",
+    "playwright-qase-reporter": "^2.7.0"
+  }
+}
