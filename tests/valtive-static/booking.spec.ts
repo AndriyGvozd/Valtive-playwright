@@ -18,12 +18,16 @@ let discoveredSlots: Slot[] = [];
 
 test.describe('Calendly slot booking', () => {
   test.beforeAll(async ({ browser }) => {
-    // Discovering 40 slots means real calendar navigation (clicking through
-    // days/months) — this reliably takes longer than the default 30s hook
-    // timeout on CI's slower/colder runners (it fit locally, but failed
-    // there with "beforeAll hook timeout of 30000ms exceeded" even after
-    // retries, since a too-short timeout isn't something a retry fixes).
-    test.setTimeout(90_000);
+    // Discovering 40 slots means visiting every available day individually,
+    // and CalendlyBookingWidget.waitForCalendarReady() is called once per
+    // visit (up to ~16.5s each on CI's much slower rendering — see its own
+    // comment for why). With several days typically needed to accumulate 40
+    // slots, that adds up well past even a generous single-call budget:
+    // 90s was enough to stop the wrong-early-timeout bug locally, but CI
+    // still hit "beforeAll hook timeout of 90000ms exceeded" once the wait
+    // was made long enough per-call to actually work. Sized for the realistic
+    // worst case of this multiplying across ~8 day-visits on a slow runner.
+    test.setTimeout(180_000);
 
     const page = await browser.newPage();
     try {
