@@ -7,7 +7,16 @@ export interface Slot {
   dayButtonName: string;
   /** Human-readable date label, e.g. "September 14, 2026" */
   dateLabel: string;
-  /** Time label, e.g. "21:00" */
+  /**
+   * The time button's `data-start-time` value, e.g. "21:00" — always 24h
+   * format regardless of how the button's *visible* text is rendered.
+   * Deliberately not the visible label: Calendly renders time buttons in
+   * either 24h ("21:00") or 12h-with-am/pm ("9:30am") depending on locale,
+   * and this was observed to differ even between two page loads in the same
+   * CI run, not just between machines — matching on the visible text
+   * (including via an exact-match click later) is unreliable, while this
+   * attribute is stable and always in one format.
+   */
   time: string;
 }
 
@@ -18,14 +27,13 @@ export interface BookingDetails {
   notes?: string;
 }
 
-// Calendly renders time-slot buttons in 24h format ("21:00") or 12h format
-// with an am/pm suffix ("9:30am") depending on locale — verified this
-// differs between environments (24h locally, 12h with am/pm on CI's
-// GitHub Actions runner), not a fixed property of the widget itself. This
-// was the actual root cause of every CI slot-discovery run finding 0 times
-// for every single day: the stricter 24h-only regex simply never matched
-// any button there.
-const TIME_BUTTON_RE = /^\d{1,2}:\d{2}\s?(am|pm)?$/i;
+// Selects time-slot buttons by their stable `data-container`/`data-start-time`
+// attributes rather than by visible text or accessible name — Calendly
+// renders the same button's text in either 24h ("21:00") or 12h-with-am/pm
+// ("9:30am") format depending on locale, and this was observed to differ
+// unpredictably even between page loads within the same CI run. The
+// `data-start-time` attribute is always 24h, regardless of display format.
+const TIME_BUTTON_SELECTOR = 'button[data-container="time-button"]';
 const AVAILABLE_DAY_RE = /Times available$/;
 const BOOKING_ENDPOINT = '**/api/booking/invitees';
 
@@ -187,7 +195,7 @@ export class CalendlyBookingWidget {
 
         const dateLabel =
           (await this.frame.locator('text=/^[A-Z][a-z]+ \\d{1,2}, \\d{4}$/').first().textContent()) ?? '';
-        const timeButtons = this.frame.getByRole('button', { name: TIME_BUTTON_RE });
+        const timeButtons = this.frame.locator(TIME_BUTTON_SELECTOR);
         // The calendar's day list is a snapshot from one earlier fetch; this
         // is a real, live, shared production calendar, so by the time we
         // actually open a day another visitor may have already taken every
@@ -208,8 +216,8 @@ export class CalendlyBookingWidget {
         const timeCount = await timeButtons.count();
 
         for (let t = 0; t < timeCount && slots.length < count; t++) {
-          const time = (await timeButtons.nth(t).textContent()) ?? '';
-          slots.push({ monthOffset, dayButtonName, dateLabel: dateLabel.trim(), time: time.trim() });
+          const time = (await timeButtons.nth(t).getAttribute('data-start-time')) ?? '';
+          slots.push({ monthOffset, dayButtonName, dateLabel: dateLabel.trim(), time });
         }
 
         await this.frame.getByRole('button', { name: 'Go to previous page' }).click();
@@ -256,7 +264,11 @@ export class CalendlyBookingWidget {
     await this.frame.getByRole('button', { name: slot.dayButtonName }).click();
     await this.frame.getByRole('heading', { name: 'Select a Time' }).waitFor({ timeout: 10000 });
 
-    await this.frame.getByRole('button', { name: slot.time, exact: true }).click();
+    // Clicked by the stable data-start-time attribute rather than the
+    // visible label — see Slot.time's doc comment for why matching on
+    // rendered text (e.g. via an exact accessible-name match) is unreliable
+    // here.
+    await this.frame.locator(`${TIME_BUTTON_SELECTOR}[data-start-time="${slot.time}"]`).click();
     await this.frame.getByRole('button', { name: /^Next/ }).click();
 
     await this.frame.getByRole('heading', { name: 'Enter Details' }).waitFor({ timeout: 10000 });
