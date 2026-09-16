@@ -160,14 +160,24 @@ export class CalendlyBookingWidget {
    * after a fresh page load.
    */
   async getAvailableSlots(count: number): Promise<Slot[]> {
+    const diag = !!process.env.CI;
+    const t0 = Date.now();
+    const log = (msg: string) => {
+      if (diag) console.log(`[DIAG +${((Date.now() - t0) / 1000).toFixed(1)}s] ${msg}`);
+    };
+
     await this.waitForCalendarReady();
+    log('initial waitForCalendarReady done');
     const slots: Slot[] = [];
     const visitedDays = new Set<string>();
     let monthOffset = 0;
+    let daysOpened = 0;
+    let daysSkippedNoTimes = 0;
 
     while (slots.length < count) {
       const availableDayButtons = this.frame.getByRole('button', { name: AVAILABLE_DAY_RE });
       const dayCount = await availableDayButtons.count();
+      log(`month offset ${monthOffset}: dayCount=${dayCount}, slots so far=${slots.length}`);
 
       for (let i = 0; i < dayCount && slots.length < count; i++) {
         const dayButton = availableDayButtons.nth(i);
@@ -175,6 +185,7 @@ export class CalendlyBookingWidget {
         if (visitedDays.has(dayButtonName)) continue;
         visitedDays.add(dayButtonName);
 
+        const dayStart = Date.now();
         await dayButton.click();
         await this.frame.getByRole('heading', { name: 'Select a Time' }).waitFor({ timeout: 10000 });
 
@@ -195,12 +206,18 @@ export class CalendlyBookingWidget {
           .waitFor({ timeout: 15000 })
           .then(() => true)
           .catch(() => false);
+        daysOpened++;
         if (!hasTimes) {
+          daysSkippedNoTimes++;
+          log(`day "${dayButtonName}" had 0 times after ${((Date.now() - dayStart) / 1000).toFixed(1)}s — skipping`);
           await this.frame.getByRole('button', { name: 'Go to previous page' }).click();
           await this.waitForCalendarReady();
           continue;
         }
         const timeCount = await timeButtons.count();
+        log(
+          `day "${dayButtonName}" had ${timeCount} times after ${((Date.now() - dayStart) / 1000).toFixed(1)}s (opened=${daysOpened}, skipped=${daysSkippedNoTimes})`
+        );
 
         for (let t = 0; t < timeCount && slots.length < count; t++) {
           const time = (await timeButtons.nth(t).textContent()) ?? '';
@@ -220,12 +237,16 @@ export class CalendlyBookingWidget {
       // `isEnabled()` ever failed for an unrelated reason (e.g. a detached
       // node during a re-render).
       const nextMonthButton = this.frame.getByRole('button', { name: 'Go to next month' });
-      if ((await nextMonthButton.count()) === 0 || !(await nextMonthButton.isEnabled())) break;
+      if ((await nextMonthButton.count()) === 0 || !(await nextMonthButton.isEnabled())) {
+        log('no more months available, stopping');
+        break;
+      }
 
       await nextMonthButton.click();
       await this.waitForCalendarReady();
       monthOffset++;
     }
+    log(`done: ${slots.length} slots, ${daysOpened} days opened, ${daysSkippedNoTimes} skipped`);
 
     return slots;
   }
