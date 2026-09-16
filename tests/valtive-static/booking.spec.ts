@@ -18,6 +18,13 @@ let discoveredSlots: Slot[] = [];
 
 test.describe('Calendly slot booking', () => {
   test.beforeAll(async ({ browser }) => {
+    // Discovering 40 slots means real calendar navigation (clicking through
+    // days/months) — this reliably takes longer than the default 30s hook
+    // timeout on CI's slower/colder runners (it fit locally, but failed
+    // there with "beforeAll hook timeout of 30000ms exceeded" even after
+    // retries, since a too-short timeout isn't something a retry fixes).
+    test.setTimeout(90_000);
+
     const page = await browser.newPage();
     try {
       const contactPage = new ContactPage(page);
