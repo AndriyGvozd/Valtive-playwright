@@ -189,6 +189,16 @@ export class CalendlyBookingWidget {
         const dateLabel =
           (await this.frame.locator('text=/^[A-Z][a-z]+ \\d{1,2}, \\d{4}$/').first().textContent()) ?? '';
         const timeButtons = this.frame.getByRole('button', { name: TIME_BUTTON_RE });
+        // The "Select a Time" heading renders before the time-slot buttons
+        // do (same async-render gap as the day grid in waitForCalendarReady)
+        // — reading .count() immediately after the heading was observed to
+        // read 0 on CI's slower renderer even for a day the calendar itself
+        // already labelled "Times available". A day labelled that way is
+        // guaranteed to have at least one time button once rendered, so wait
+        // for it directly via Playwright's own element-waiting instead of a
+        // fixed sleep — this resolves the instant it appears rather than
+        // guessing how long to sleep.
+        await timeButtons.first().waitFor({ timeout: 15000 });
         const timeCount = await timeButtons.count();
 
         for (let t = 0; t < timeCount && slots.length < count; t++) {
