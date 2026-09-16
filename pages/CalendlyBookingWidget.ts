@@ -60,6 +60,27 @@ export class CalendlyBookingWidget {
     return this.frame.getByRole('heading', { name: 'Select a Day' });
   }
 
+  /**
+   * Forces the widget's time display to 24h notation via its own "Time
+   * zone" panel (a `Time format` radio group with "am/pm"/"24h" options).
+   * This widget defaults to either notation depending on locale — observed
+   * to default to 24h locally but 12h-with-am/pm on CI — and every part of
+   * this page object depends on a single, predictable notation (the
+   * `data-start-time` attribute this relies on elsewhere is unaffected by
+   * notation, but reasoning about times consistently is much simpler pinned
+   * to one format). `.check()` is a no-op if 24h is already
+   * selected, so this is safe to call unconditionally.
+   */
+  async ensure24HourTimeFormat(): Promise<void> {
+    const timeZoneButton = this.frame.getByRole('button', { name: /Time zone/ });
+    await timeZoneButton.click();
+    await this.frame.getByRole('radio', { name: '24h', exact: true }).check();
+    // Closed via Escape rather than re-clicking timeZoneButton: the open
+    // dropdown's own option list overlaps that button and intercepted the
+    // pointer event, making a second click unreliable.
+    await this.page.keyboard.press('Escape');
+  }
+
   get confirmationHeading(): Locator {
     return this.frame.getByText(CalendlyBookingWidget.CONFIRMATION_HEADING, { exact: false });
   }
@@ -176,6 +197,7 @@ export class CalendlyBookingWidget {
    */
   async getAvailableSlots(count: number): Promise<Slot[]> {
     await this.waitForCalendarReady();
+    await this.ensure24HourTimeFormat();
     const slots: Slot[] = [];
     const visitedDays = new Set<string>();
     let monthOffset = 0;
@@ -259,6 +281,12 @@ export class CalendlyBookingWidget {
    * initial month is currently visible.
    */
   async bookSlot(slot: Slot, details: BookingDetails): Promise<void> {
+    // Each call to bookSlot() follows a fresh contactPage.goto(), so the
+    // time-format notation needs re-forcing here too (see
+    // ensure24HourTimeFormat's doc comment) — it isn't carried over from
+    // getAvailableSlots()'s earlier call on a since-discarded page instance.
+    await this.waitForCalendarReady();
+    await this.ensure24HourTimeFormat();
     await this.navigateToMonth(slot.monthOffset);
 
     await this.frame.getByRole('button', { name: slot.dayButtonName }).click();
