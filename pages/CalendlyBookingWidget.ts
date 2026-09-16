@@ -124,6 +124,16 @@ export class CalendlyBookingWidget {
    * days" is itself a valid stable-looking transient state while data is
    * still loading — requiring two consecutive equal, non-transient reads a
    * short interval apart filters that out in practice.
+   *
+   * The head-start and overall polling window are sized generously (not just
+   * for local runs): on CI (GitHub Actions), the calendar's underlying API
+   * response arrives just as fast as locally (confirmed via diagnostic
+   * logging of the real `calendar/range` response), but the runner's much
+   * slower/virtualized GPU rendering (observed "GPU stall due to ReadPixels"
+   * in its console) delays the DOM actually reflecting that data — a tighter
+   * window that works locally stabilized on the pre-fetch "0 available" state
+   * before CI ever painted the real days, causing 0 slots to be discovered
+   * there despite the API genuinely returning availability.
    */
   async waitForCalendarReady(): Promise<void> {
     await this.selectADayHeading.waitFor({ timeout: 20000 });
@@ -138,9 +148,9 @@ export class CalendlyBookingWidget {
     // This short, fixed head start only delays the first *measurement*; the
     // actual "is it done loading" decision below is still adaptive, not a
     // blind sleep-and-hope for the whole wait.
-    await this.page.waitForTimeout(1000);
+    await this.page.waitForTimeout(1500);
 
-    const deadline = Date.now() + 9000;
+    const deadline = Date.now() + 15000;
     let previousCount = await availableDayButtons.count();
 
     while (Date.now() < deadline) {
