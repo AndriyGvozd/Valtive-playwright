@@ -68,16 +68,30 @@ export class CalendlyBookingWidget {
    * this page object depends on a single, predictable notation (the
    * `data-start-time` attribute this relies on elsewhere is unaffected by
    * notation, but reasoning about times consistently is much simpler pinned
-   * to one format). `.check()` is a no-op if 24h is already
-   * selected, so this is safe to call unconditionally.
+   * to one format).
+   *
+   * Clicked via the real DOM `.click()` method (through `evaluate`) rather
+   * than Playwright's simulated pointer click: this widget renders inside
+   * an <iframe> on a page with its own sticky navbar, and when Playwright
+   * scrolls the target into view it can land under that navbar — which is
+   * outside the iframe entirely but visually overlaps it, so Playwright's
+   * actionability check reports the navbar as "intercepting pointer
+   * events" and retries forever (confirmed both by an explicit timeout
+   * error locally and, before that timeout was added, by this silently
+   * consuming an entire 300s hook budget with no error on CI). A native
+   * `.click()` call doesn't do hit-testing against overlapping elements, so
+   * it isn't affected by an overlay that's outside this iframe's own
+   * document and wouldn't actually block a real click on the target itself.
    */
   async ensure24HourTimeFormat(): Promise<void> {
     const timeZoneButton = this.frame.getByRole('button', { name: /Time zone/ });
-    await timeZoneButton.click();
-    await this.frame.getByRole('radio', { name: '24h', exact: true }).check();
-    // Closed via Escape rather than re-clicking timeZoneButton: the open
-    // dropdown's own option list overlaps that button and intercepted the
-    // pointer event, making a second click unreliable.
+    await timeZoneButton.waitFor({ timeout: 10000 });
+    await timeZoneButton.evaluate((el: HTMLElement) => el.click());
+
+    const option24h = this.frame.locator('input[name="time_notation"][value="24h"]');
+    await option24h.waitFor({ timeout: 10000, state: 'attached' });
+    await option24h.evaluate((el: HTMLInputElement) => el.click());
+
     await this.page.keyboard.press('Escape');
   }
 
