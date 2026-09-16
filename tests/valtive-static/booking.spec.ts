@@ -17,7 +17,27 @@ const SLOTS_TO_BOOK = Number(process.env.BOOKING_SLOTS_COUNT) || REQUIRED_SLOTS;
 
 let discoveredSlots: Slot[] = [];
 
-test.describe('Calendly slot booking', () => {
+/**
+ * NOTE ON SCOPE: these tests exercise the real Calendly UI flow (day/time
+ * selection, form fill, submit, real outgoing POST) but assert against a
+ * *stubbed* confirmation screen, not Calendly's own rendered response — see
+ * CalendlyBookingWidget.installBookingMock()'s doc comment for why (Calendly
+ * rejects automated submissions with an anti-bot check server-side,
+ * independent of this test suite). This means a change to Calendly's actual
+ * confirmation copy/markup would NOT be caught here. Real-response coverage
+ * lives separately in contact-page.smoke.spec.ts's
+ * "real Calendly booking request is rejected by anti-bot protection" test,
+ * which documents and asserts on that live rejection instead of masking it.
+ */
+test.describe('Calendly slot booking (UI flow + network contract — see anti-bot mock note above)', () => {
+  // Discovery in beforeAll populates module-level `discoveredSlots`, which
+  // every test below reads by index. This is only safe run serially within
+  // this file — configured explicitly here rather than relying on
+  // playwright.config.ts's global `workers: 1` staying that way forever.
+  // If that global setting ever changes, this file's own tests still can't
+  // silently race against a `beforeAll` that hasn't populated the array yet.
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeAll(async ({ browser }) => {
     // Discovering 40 slots means visiting every available day individually;
     // this is a real, live, shared calendar, so some days that looked

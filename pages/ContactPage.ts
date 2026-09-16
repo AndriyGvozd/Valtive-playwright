@@ -1,6 +1,15 @@
 import { Page, FrameLocator, Locator } from '@playwright/test';
 
 export class ContactPage {
+  /**
+   * Single source of truth for contact-info copy asserted on below — kept as
+   * named constants (not inline literals) so a real change to this content
+   * fails with a clear, named diff instead of a bare string-mismatch inside
+   * a locator call.
+   */
+  static readonly CONTACT_EMAIL = 'ceo@valtive.io';
+  static readonly CONTACT_LOCATION = 'New Jersey, USA';
+
   constructor(private readonly page: Page) {}
 
   async goto(): Promise<void> {
@@ -53,11 +62,11 @@ export class ContactPage {
 
   /** Plain text here (not a link) — the mailto: link lives only in the page footer. */
   get contactInfoEmailText(): Locator {
-    return this.contactInfoAddress.getByText('ceo@valtive.io');
+    return this.contactInfoAddress.getByText(ContactPage.CONTACT_EMAIL);
   }
 
   get contactInfoLocationText(): Locator {
-    return this.contactInfoAddress.getByText('New Jersey, USA');
+    return this.contactInfoAddress.getByText(ContactPage.CONTACT_LOCATION);
   }
 
   get contactInfoLinkedInLink(): Locator {
