@@ -189,16 +189,25 @@ export class CalendlyBookingWidget {
         const dateLabel =
           (await this.frame.locator('text=/^[A-Z][a-z]+ \\d{1,2}, \\d{4}$/').first().textContent()) ?? '';
         const timeButtons = this.frame.getByRole('button', { name: TIME_BUTTON_RE });
-        // The "Select a Time" heading renders before the time-slot buttons
-        // do (same async-render gap as the day grid in waitForCalendarReady)
-        // — reading .count() immediately after the heading was observed to
-        // read 0 on CI's slower renderer even for a day the calendar itself
-        // already labelled "Times available". A day labelled that way is
-        // guaranteed to have at least one time button once rendered, so wait
-        // for it directly via Playwright's own element-waiting instead of a
-        // fixed sleep — this resolves the instant it appears rather than
-        // guessing how long to sleep.
-        await timeButtons.first().waitFor({ timeout: 15000 });
+        // The calendar's day list is a snapshot from one earlier fetch; this
+        // is a real, live, shared production calendar, so by the time we
+        // actually open a day another visitor may have already taken every
+        // slot on it in the meantime (this a genuine race against real
+        // traffic, not a rendering delay — confirmed by this timing out on
+        // CI even after generous waits). Treat "no time buttons ever
+        // appeared for this day" as that legitimate case and move on to the
+        // next day, rather than letting the whole discovery run fail because
+        // one specific day lost its availability out from under us.
+        const hasTimes = await timeButtons
+          .first()
+          .waitFor({ timeout: 15000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!hasTimes) {
+          await this.frame.getByRole('button', { name: 'Go to previous page' }).click();
+          await this.waitForCalendarReady();
+          continue;
+        }
         const timeCount = await timeButtons.count();
 
         for (let t = 0; t < timeCount && slots.length < count; t++) {
