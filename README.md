@@ -1,6 +1,8 @@
 # Valtive Contact Form / Calendly Booking Automation
 
-**📊 [View test run reports in Qase](https://app.qase.io/run/VP)** — every run of this suite (local via `npm run test:qase`, or CI) uploads its results here automatically.
+**📊 [View test run reports in Qase](https://app.qase.io/run/VP)** (sorted newest-first — the top entry is the latest run) — every run of this suite (local via `npm run test:qase`, or CI) uploads its results here automatically.
+
+**⚙️ [View CI runs on GitHub Actions](https://github.com/AndriyGvozd/Valtive-playwright/actions/workflows/playwright.yml)** (also newest-first).
 
 Playwright end-to-end test automation for [valtive.io](https://valtive.io): the embedded Calendly booking widget on the contact page, plus fast smoke coverage of the rest of the site's static pages and navigation.
 
