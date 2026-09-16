@@ -220,6 +220,18 @@ export class CalendlyBookingWidget {
         if (!hasTimes) {
           daysSkippedNoTimes++;
           log(`day "${dayButtonName}" had 0 times after ${((Date.now() - dayStart) / 1000).toFixed(1)}s — skipping`);
+          if (diag && daysSkippedNoTimes === 1) {
+            // Only dump this once (first occurrence) to avoid flooding the
+            // log — this is what's actually in the "Select a Time" panel
+            // when it renders no time buttons, which should reveal whether
+            // it's genuinely empty, stuck loading, or showing an error/
+            // unexpected message we haven't accounted for.
+            const panelText = await this.frame
+              .locator('body')
+              .innerText()
+              .catch((e) => `(failed to read: ${e})`);
+            log(`"Select a Time" panel contents on first empty day:\n${panelText}`);
+          }
           await this.frame.getByRole('button', { name: 'Go to previous page' }).click();
           await this.waitForCalendarReady();
           continue;
