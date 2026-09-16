@@ -211,16 +211,8 @@ export class CalendlyBookingWidget {
    * after a fresh page load.
    */
   async getAvailableSlots(count: number): Promise<Slot[]> {
-    const diag = !!process.env.CI;
-    const t0 = Date.now();
-    const log = (msg: string) => {
-      if (diag) console.log(`[DIAG +${((Date.now() - t0) / 1000).toFixed(1)}s] ${msg}`);
-    };
-
     await this.waitForCalendarReady();
-    log('waitForCalendarReady (initial) done');
     await this.ensure24HourTimeFormat();
-    log('ensure24HourTimeFormat done');
     const slots: Slot[] = [];
     const visitedDays = new Set<string>();
     let monthOffset = 0;
@@ -228,7 +220,6 @@ export class CalendlyBookingWidget {
     while (slots.length < count) {
       const availableDayButtons = this.frame.getByRole('button', { name: AVAILABLE_DAY_RE });
       const dayCount = await availableDayButtons.count();
-      log(`month offset ${monthOffset}: dayCount=${dayCount}, slots so far=${slots.length}`);
 
       for (let i = 0; i < dayCount && slots.length < count; i++) {
         const dayButton = availableDayButtons.nth(i);
@@ -236,7 +227,6 @@ export class CalendlyBookingWidget {
         if (visitedDays.has(dayButtonName)) continue;
         visitedDays.add(dayButtonName);
 
-        const dayStart = Date.now();
         await this.nativeClick(dayButton);
         await this.frame.getByRole('heading', { name: 'Select a Time' }).waitFor({ timeout: 10000 });
 
@@ -255,7 +245,6 @@ export class CalendlyBookingWidget {
           .waitFor({ timeout: 15000 })
           .then(() => true)
           .catch(() => false);
-        log(`day "${dayButtonName}": hasTimes=${hasTimes} after ${((Date.now() - dayStart) / 1000).toFixed(1)}s`);
         if (!hasTimes) {
           await this.nativeClick(this.frame.getByRole('button', { name: 'Go to previous page' }));
           await this.waitForCalendarReady();
@@ -288,7 +277,6 @@ export class CalendlyBookingWidget {
       monthOffset++;
     }
 
-    log(`done: ${slots.length} slots collected`);
     return slots;
   }
 
