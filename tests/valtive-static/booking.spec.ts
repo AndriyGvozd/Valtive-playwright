@@ -11,7 +11,8 @@ const REQUIRED_SLOTS = 40;
 // Overridable via BOOKING_SLOTS_COUNT for local smoke-verification runs
 // (booking is against a real, live, shared Calendly calendar). Only affects
 // how many of the discovered slots get individually booked below; the
-// availability check above always requires the full REQUIRED_SLOTS.
+// availability check enforced in beforeAll always requires the full
+// REQUIRED_SLOTS.
 const SLOTS_TO_BOOK = Number(process.env.BOOKING_SLOTS_COUNT) || REQUIRED_SLOTS;
 
 let discoveredSlots: Slot[] = [];
@@ -22,11 +23,9 @@ test.describe('Calendly slot booking', () => {
     // and CalendlyBookingWidget.waitForCalendarReady() is called once per
     // visit (up to ~16.5s each on CI's much slower rendering — see its own
     // comment for why). With several days typically needed to accumulate 40
-    // slots, that adds up well past even a generous single-call budget:
-    // 90s was enough to stop the wrong-early-timeout bug locally, but CI
-    // still hit "beforeAll hook timeout of 90000ms exceeded" once the wait
-    // was made long enough per-call to actually work. Sized for the realistic
-    // worst case of this multiplying across ~8 day-visits on a slow runner.
+    // slots, that adds up well past even a generous single-call budget.
+    // Sized for the realistic worst case of this multiplying across ~8
+    // day-visits on a slow runner.
     test.setTimeout(180_000);
 
     const page = await browser.newPage();
@@ -36,17 +35,22 @@ test.describe('Calendly slot booking', () => {
 
       const widget = new CalendlyBookingWidget(contactPage.calendlyFrame, page);
       discoveredSlots = await widget.getAvailableSlots(REQUIRED_SLOTS);
+
+      // Asserted here rather than as its own separate test: a standalone
+      // assertion test that only ever runs this one check reports as a
+      // confusing, unexplained "(0ms)" failure disconnected from the real
+      // beforeAll work that produced it. Asserting inside the hook instead
+      // fails every dependent test with one clear, single root-cause
+      // message pointing straight at this line.
+      expect(
+        discoveredSlots.length,
+        `Calendly must expose at least ${REQUIRED_SLOTS} available slots to book, found ${discoveredSlots.length}`
+      ).toBeGreaterThanOrEqual(REQUIRED_SLOTS);
     } finally {
       // Must run even if getAvailableSlots() throws (e.g. the site is down) —
       // otherwise this page/context leaks for the rest of the worker's run.
       await page.close();
     }
-  });
-
-  test(`exposes at least ${REQUIRED_SLOTS} available time slots`, () => {
-    expect(discoveredSlots.length, 'Calendly must expose at least 40 available slots to book').toBeGreaterThanOrEqual(
-      REQUIRED_SLOTS
-    );
   });
 
   // Each slot is its own independent test (not one loop inside a single

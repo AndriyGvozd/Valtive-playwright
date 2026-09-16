@@ -1,4 +1,4 @@
-import { FrameLocator, Locator, Page } from '@playwright/test';
+import { FrameLocator, Locator, Page, expect } from '@playwright/test';
 
 export interface Slot {
   /** How many "Go to next month" clicks are needed from the initial view to reach this slot's month. */
@@ -115,50 +115,42 @@ export class CalendlyBookingWidget {
    * fetched asynchronously *after* the month status announcement: every day
    * cell renders immediately as "No times available" and the real
    * availability data (which flips some cells to "Times available") arrives
-   * slightly later via an async fetch. This polls the "Times available"
-   * count until it has been stable across two consecutive reads, rather than
-   * guessing a fixed delay is long enough (a plain `waitForTimeout` was
-   * flaky under slower network conditions and wasteful under fast ones).
+   * slightly later via an async fetch/render pass, with no DOM signal (no
+   * spinner, no `aria-busy`) marking when that finishes — confirmed by
+   * inspecting the widget directly. In the absence of such a signal, this
+   * uses `expect.poll` (Playwright's own polling primitive) to wait until
+   * the "Times available" count has read the same value on three
+   * consecutive polls a fixed interval apart, rather than a single
+   * `waitForTimeout` sleep-and-hope for an arbitrary duration.
    *
-   * A single stable reading isn't enough on its own, since "0 available
-   * days" is itself a valid stable-looking transient state while data is
-   * still loading — requiring two consecutive equal, non-transient reads a
-   * short interval apart filters that out in practice.
-   *
-   * The head-start and overall polling window are sized generously (not just
-   * for local runs): on CI (GitHub Actions), the calendar's underlying API
-   * response arrives just as fast as locally (confirmed via diagnostic
-   * logging of the real `calendar/range` response), but the runner's much
-   * slower/virtualized GPU rendering (observed "GPU stall due to ReadPixels"
-   * in its console) delays the DOM actually reflecting that data — a tighter
-   * window that works locally stabilized on the pre-fetch "0 available" state
-   * before CI ever painted the real days, causing 0 slots to be discovered
-   * there despite the API genuinely returning availability.
+   * The interval is set explicitly (rather than left at `expect.poll`'s
+   * default, which starts at 100ms) because a fast enough cadence can
+   * observe "0 available" as stable purely by coincidence, well before the
+   * real fetch/render has even started — this was verified to happen with
+   * the default schedule. Spacing reads further apart makes that false
+   * positive far less likely without guessing a total wait duration: the
+   * loop still exits the instant real stability is observed, rather than
+   * always waiting out a fixed window.
    */
   async waitForCalendarReady(): Promise<void> {
     await this.selectADayHeading.waitFor({ timeout: 20000 });
     await this.frame.getByRole('status').filter({ hasText: 'is now displayed' }).waitFor({ timeout: 15000 });
 
     const availableDayButtons = this.frame.getByRole('button', { name: AVAILABLE_DAY_RE });
+    let previousCount = -1;
+    let stableStreak = 0;
 
-    // The availability fetch hasn't necessarily started yet the instant the
-    // month status announces — a "0 available" reading taken immediately
-    // here is not real data, it's the pre-fetch placeholder state, and would
-    // otherwise look falsely "stable" against itself on the very first poll.
-    // This short, fixed head start only delays the first *measurement*; the
-    // actual "is it done loading" decision below is still adaptive, not a
-    // blind sleep-and-hope for the whole wait.
-    await this.page.waitForTimeout(1500);
-
-    const deadline = Date.now() + 15000;
-    let previousCount = await availableDayButtons.count();
-
-    while (Date.now() < deadline) {
-      await this.page.waitForTimeout(300);
-      const currentCount = await availableDayButtons.count();
-      if (currentCount === previousCount) return;
-      previousCount = currentCount;
-    }
+    await expect
+      .poll(
+        async () => {
+          const currentCount = await availableDayButtons.count();
+          stableStreak = currentCount === previousCount ? stableStreak + 1 : 0;
+          previousCount = currentCount;
+          return stableStreak;
+        },
+        { timeout: 25000, intervals: [800] }
+      )
+      .toBeGreaterThanOrEqual(2);
   }
 
   /**
