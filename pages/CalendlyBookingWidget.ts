@@ -168,6 +168,16 @@ export class CalendlyBookingWidget {
 
     await this.waitForCalendarReady();
     log('initial waitForCalendarReady done');
+
+    if (diag) {
+      const browserTz = await this.page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+      const tzButtonText = await this.frame
+        .getByRole('button', { name: /Time zone/ })
+        .textContent()
+        .catch(() => '(not found)');
+      log(`browser Intl timezone=${browserTz}, Calendly-selected timezone label="${tzButtonText}"`);
+    }
+
     const slots: Slot[] = [];
     const visitedDays = new Set<string>();
     let monthOffset = 0;

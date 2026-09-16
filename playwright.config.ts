@@ -55,6 +55,24 @@ export default defineConfig({
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
+
+    /*
+     * Pinned explicitly rather than left at the OS default: the Calendly
+     * widget buckets its time slots into calendar days according to the
+     * browser's timezone. Locally that defaulted to "Eastern European Time"
+     * (matching this machine's OS zone); GitHub Actions runners default to
+     * UTC instead. That mismatch made every single day in the calendar
+     * report itself as having times available (a check apparently done
+     * without full timezone-aware bucketing) while the detailed per-day
+     * view — which IS timezone-aware — found zero times for every one of
+     * them on CI, 100% reproducibly. Pinning this makes the test
+     * environment's timezone consistent regardless of where it runs, which
+     * is the actual fix (not a workaround for a code bug — there wasn't
+     * one; the two environments were legitimately configured differently).
+     * Matches the value Calendly's own API reports as this event type's
+     * `availability_timezone`.
+     */
+    timezoneId: 'Europe/Berlin',
   },
 
   /* Chromium only: the booking flow books real, shared Calendly slots, so we
