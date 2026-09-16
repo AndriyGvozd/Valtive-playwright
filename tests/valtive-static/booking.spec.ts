@@ -19,14 +19,17 @@ let discoveredSlots: Slot[] = [];
 
 test.describe('Calendly slot booking', () => {
   test.beforeAll(async ({ browser }) => {
-    // Discovering 40 slots means visiting every available day individually,
-    // and CalendlyBookingWidget.waitForCalendarReady() is called once per
-    // visit (up to ~16.5s each on CI's much slower rendering — see its own
-    // comment for why). With several days typically needed to accumulate 40
-    // slots, that adds up well past even a generous single-call budget.
-    // Sized for the realistic worst case of this multiplying across ~8
-    // day-visits on a slow runner.
-    test.setTimeout(180_000);
+    // Discovering 40 slots means visiting every available day individually;
+    // waitForCalendarReady() and the per-day time-button wait each cost up
+    // to ~25s/~15s on CI's much slower rendering (see their own comments),
+    // and this is a real, live, shared calendar where some days that looked
+    // available end up skipped (another visitor took them first — see
+    // getAvailableSlots' race-condition handling), so more days than the
+    // minimum may need visiting. 180s wasn't enough in practice on CI (hit
+    // "beforeAll hook timeout of 180000ms exceeded" across all 3 attempts);
+    // sized generously here since this cost is paid once per file, and the
+    // CI job itself has a 60-minute ceiling to spare.
+    test.setTimeout(300_000);
 
     const page = await browser.newPage();
     try {
