@@ -27,11 +27,36 @@ test.describe('Calendly slot booking', () => {
 
     const page = await browser.newPage();
     try {
+      // TEMPORARY DIAGNOSTIC (remove once the CI "0 slots discovered" cause
+      // is confirmed): capture the real availability response and any page
+      // console errors, to check whether Calendly is serving GitHub Actions'
+      // runner IP a blocked/empty calendar (the same anti-bot system already
+      // documented for the booking endpoint) rather than this being a code
+      // bug in getAvailableSlots.
+      if (process.env.CI) {
+        page.on('console', (msg) => console.log(`[CI DIAG] console.${msg.type()}: ${msg.text()}`));
+        page.on('response', async (response) => {
+          if (response.url().includes('/calendar/range')) {
+            console.log(`[CI DIAG] calendar/range status: ${response.status()}`);
+            try {
+              const body = await response.text();
+              console.log(`[CI DIAG] calendar/range body (first 1000 chars): ${body.slice(0, 1000)}`);
+            } catch (e) {
+              console.log(`[CI DIAG] could not read calendar/range body: ${e}`);
+            }
+          }
+        });
+      }
+
       const contactPage = new ContactPage(page);
       await contactPage.goto();
 
       const widget = new CalendlyBookingWidget(contactPage.calendlyFrame, page);
       discoveredSlots = await widget.getAvailableSlots(REQUIRED_SLOTS);
+
+      if (process.env.CI) {
+        console.log(`[CI DIAG] discoveredSlots.length = ${discoveredSlots.length}`);
+      }
     } finally {
       // Must run even if getAvailableSlots() throws (e.g. the site is down) —
       // otherwise this page/context leaks for the rest of the worker's run.
