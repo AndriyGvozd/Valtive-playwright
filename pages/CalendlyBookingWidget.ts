@@ -18,7 +18,14 @@ export interface BookingDetails {
   notes?: string;
 }
 
-const TIME_BUTTON_RE = /^\d{1,2}:\d{2}$/;
+// Calendly renders time-slot buttons in 24h format ("21:00") or 12h format
+// with an am/pm suffix ("9:30am") depending on locale — verified this
+// differs between environments (24h locally, 12h with am/pm on CI's
+// GitHub Actions runner), not a fixed property of the widget itself. This
+// was the actual root cause of every CI slot-discovery run finding 0 times
+// for every single day: the stricter 24h-only regex simply never matched
+// any button there.
+const TIME_BUTTON_RE = /^\d{1,2}:\d{2}\s?(am|pm)?$/i;
 const AVAILABLE_DAY_RE = /Times available$/;
 const BOOKING_ENDPOINT = '**/api/booking/invitees';
 
@@ -160,34 +167,14 @@ export class CalendlyBookingWidget {
    * after a fresh page load.
    */
   async getAvailableSlots(count: number): Promise<Slot[]> {
-    const diag = !!process.env.CI;
-    const t0 = Date.now();
-    const log = (msg: string) => {
-      if (diag) console.log(`[DIAG +${((Date.now() - t0) / 1000).toFixed(1)}s] ${msg}`);
-    };
-
     await this.waitForCalendarReady();
-    log('initial waitForCalendarReady done');
-
-    if (diag) {
-      const browserTz = await this.page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
-      const tzButtonText = await this.frame
-        .getByRole('button', { name: /Time zone/ })
-        .textContent()
-        .catch(() => '(not found)');
-      log(`browser Intl timezone=${browserTz}, Calendly-selected timezone label="${tzButtonText}"`);
-    }
-
     const slots: Slot[] = [];
     const visitedDays = new Set<string>();
     let monthOffset = 0;
-    let daysOpened = 0;
-    let daysSkippedNoTimes = 0;
 
     while (slots.length < count) {
       const availableDayButtons = this.frame.getByRole('button', { name: AVAILABLE_DAY_RE });
       const dayCount = await availableDayButtons.count();
-      log(`month offset ${monthOffset}: dayCount=${dayCount}, slots so far=${slots.length}`);
 
       for (let i = 0; i < dayCount && slots.length < count; i++) {
         const dayButton = availableDayButtons.nth(i);
@@ -195,7 +182,6 @@ export class CalendlyBookingWidget {
         if (visitedDays.has(dayButtonName)) continue;
         visitedDays.add(dayButtonName);
 
-        const dayStart = Date.now();
         await dayButton.click();
         await this.frame.getByRole('heading', { name: 'Select a Time' }).waitFor({ timeout: 10000 });
 
@@ -205,41 +191,21 @@ export class CalendlyBookingWidget {
         // The calendar's day list is a snapshot from one earlier fetch; this
         // is a real, live, shared production calendar, so by the time we
         // actually open a day another visitor may have already taken every
-        // slot on it in the meantime (this a genuine race against real
-        // traffic, not a rendering delay — confirmed by this timing out on
-        // CI even after generous waits). Treat "no time buttons ever
-        // appeared for this day" as that legitimate case and move on to the
-        // next day, rather than letting the whole discovery run fail because
-        // one specific day lost its availability out from under us.
+        // slot on it in the meantime. Treat "no time buttons ever appeared
+        // for this day" as that legitimate, occasional case and move on to
+        // the next day, rather than letting the whole discovery run fail
+        // because one specific day lost its availability out from under us.
         const hasTimes = await timeButtons
           .first()
           .waitFor({ timeout: 15000 })
           .then(() => true)
           .catch(() => false);
-        daysOpened++;
         if (!hasTimes) {
-          daysSkippedNoTimes++;
-          log(`day "${dayButtonName}" had 0 times after ${((Date.now() - dayStart) / 1000).toFixed(1)}s — skipping`);
-          if (diag && daysSkippedNoTimes === 1) {
-            // Only dump this once (first occurrence) to avoid flooding the
-            // log — this is what's actually in the "Select a Time" panel
-            // when it renders no time buttons, which should reveal whether
-            // it's genuinely empty, stuck loading, or showing an error/
-            // unexpected message we haven't accounted for.
-            const panelText = await this.frame
-              .locator('body')
-              .innerText()
-              .catch((e) => `(failed to read: ${e})`);
-            log(`"Select a Time" panel contents on first empty day:\n${panelText}`);
-          }
           await this.frame.getByRole('button', { name: 'Go to previous page' }).click();
           await this.waitForCalendarReady();
           continue;
         }
         const timeCount = await timeButtons.count();
-        log(
-          `day "${dayButtonName}" had ${timeCount} times after ${((Date.now() - dayStart) / 1000).toFixed(1)}s (opened=${daysOpened}, skipped=${daysSkippedNoTimes})`
-        );
 
         for (let t = 0; t < timeCount && slots.length < count; t++) {
           const time = (await timeButtons.nth(t).textContent()) ?? '';
@@ -259,16 +225,12 @@ export class CalendlyBookingWidget {
       // `isEnabled()` ever failed for an unrelated reason (e.g. a detached
       // node during a re-render).
       const nextMonthButton = this.frame.getByRole('button', { name: 'Go to next month' });
-      if ((await nextMonthButton.count()) === 0 || !(await nextMonthButton.isEnabled())) {
-        log('no more months available, stopping');
-        break;
-      }
+      if ((await nextMonthButton.count()) === 0 || !(await nextMonthButton.isEnabled())) break;
 
       await nextMonthButton.click();
       await this.waitForCalendarReady();
       monthOffset++;
     }
-    log(`done: ${slots.length} slots, ${daysOpened} days opened, ${daysSkippedNoTimes} skipped`);
 
     return slots;
   }

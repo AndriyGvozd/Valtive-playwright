@@ -20,25 +20,18 @@ let discoveredSlots: Slot[] = [];
 test.describe('Calendly slot booking', () => {
   test.beforeAll(async ({ browser }) => {
     // Discovering 40 slots means visiting every available day individually;
-    // waitForCalendarReady() and the per-day time-button wait each cost up
-    // to ~25s/~15s on CI's much slower rendering (see their own comments),
-    // and this is a real, live, shared calendar where some days that looked
-    // available end up skipped (another visitor took them first — see
-    // getAvailableSlots' race-condition handling), so more days than the
-    // minimum may need visiting. 180s wasn't enough in practice on CI (hit
-    // "beforeAll hook timeout of 180000ms exceeded" across all 3 attempts);
-    // sized generously here since this cost is paid once per file, and the
-    // CI job itself has a 60-minute ceiling to spare.
+    // this is a real, live, shared calendar, so some days that looked
+    // available in the day-grid summary can turn out already taken by
+    // another visitor once opened (see getAvailableSlots' handling of that),
+    // meaning more days than the minimum may need visiting. Generous
+    // headroom kept here since this cost is paid once per file, and the CI
+    // job itself has a 60-minute ceiling to spare.
     test.setTimeout(300_000);
 
     // browser.newPage() bypasses playwright.config.ts's `use` block (that's
     // only auto-applied to the fixture-provided `page`/`context`), so the
     // pinned `timezoneId` there is passed explicitly here too, for
-    // consistency. NOTE: pinning this did NOT reproduce/fix the CI "0 times
-    // for every day" failure when tested locally by forcing `timezoneId:
-    // 'UTC'` (still found real times) — so browser Intl timezone is likely
-    // not the actual cause; kept as a reasonable default regardless while
-    // the diagnostic logging below narrows down the real one.
+    // consistency between every page this suite opens.
     const page = await browser.newPage({ timezoneId: 'Europe/Berlin' });
     try {
       const contactPage = new ContactPage(page);
